@@ -40,6 +40,21 @@ class CodeObfuscator:
 
     def obfuscate(self, code):
         tree = ast.parse(code)
+        
+        # 预处理：确保所有FunctionDef节点都有lineno和col_offset属性
+        class FunctionDefAttributeFixer(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                # 确保设置lineno和col_offset属性，即使它们不存在
+                if not hasattr(node, 'lineno'):
+                    node.lineno = 0
+                if not hasattr(node, 'col_offset'):
+                    node.col_offset = 0
+                self.generic_visit(node)
+                return node
+        
+        # 应用属性修复器
+        tree = FunctionDefAttributeFixer().visit(tree)
+        
         # 随机选择几种混淆方法进行应用，但确保函数重命名最后进行
         methods_without_renaming = list(range(1, 26))
         methods_without_renaming.remove(15)  # 移除函数重命名方法
@@ -216,12 +231,31 @@ class CodeObfuscator:
 
     def duplication(self, tree):
         class Duplicator(ast.NodeTransformer):
+            def contains_input_call(self, stmt):
+                """检查语句是否包含input函数调用"""
+                contains_input = False
+                
+                class InputCallChecker(ast.NodeVisitor):
+                    def __init__(self):
+                        self.found = False
+                    
+                    def visit_Call(self, node):
+                        if isinstance(node.func, ast.Name) and node.func.id == 'input':
+                            self.found = True
+                        self.generic_visit(node)
+                
+                checker = InputCallChecker()
+                checker.visit(stmt)
+                return checker.found
+            
             def visit_FunctionDef(self, node):
                 new_body = []
                 for stmt in node.body:
                     new_body.append(stmt)
-                    # 随机复制赋值语句
-                    if isinstance(stmt, ast.Assign) and random.random() < 0.3:
+                    # 随机复制赋值语句，但排除包含input函数调用的语句
+                    if (isinstance(stmt, ast.Assign) and 
+                        random.random() < 0.3 and 
+                        not self.contains_input_call(stmt)):
                         new_stmt = copy.deepcopy(stmt)
                         if hasattr(stmt, 'lineno'):
                             new_stmt.lineno = stmt.lineno
@@ -304,7 +338,7 @@ class CodeObfuscator:
         return tree
 
     def method_name_renaming(self, tree):
-        # 收集所有函数定义
+        # 收集所有函数定义，确保递归访问函数体以收集所有函数
         class FunctionCollector(ast.NodeVisitor):
             def __init__(self):
                 self.functions = {}
@@ -313,31 +347,33 @@ class CodeObfuscator:
                 old_name = node.name
                 new_name = f"obfuscated_func_{random.randint(1000, 9999)}"
                 self.functions[old_name] = new_name
-                self.generic_visit(node)
+                self.generic_visit(node)  # 递归访问函数体以收集内部函数
         
         collector = FunctionCollector()
         collector.visit(tree)
         
-        # 重命名函数定义和调用
-        class MethodRenamer(ast.NodeTransformer):
+        # 同时重命名函数调用和函数定义，确保一致性
+        class FunctionRenamer(ast.NodeTransformer):
             def __init__(self, function_mapping):
                 self.function_mapping = function_mapping
-            
-            def visit_FunctionDef(self, node):
-                if node.name in self.function_mapping:
-                    node.name = self.function_mapping[node.name]
-                # 递归处理函数体内的节点，确保函数调用也被重命名
-                self.generic_visit(node)
-                return node
             
             def visit_Call(self, node):
                 if isinstance(node.func, ast.Name) and node.func.id in self.function_mapping:
                     node.func.id = self.function_mapping[node.func.id]
+                self.generic_visit(node)
+                return node
+            
+            def visit_FunctionDef(self, node):
+                if node.name in self.function_mapping:
+                    node.name = self.function_mapping[node.name]
+                self.generic_visit(node)  # 递归访问函数体以处理内部函数
                 return node
         
         if collector.functions:
-            renamer = MethodRenamer(collector.functions)
-            return renamer.visit(tree)
+            # 一次性重命名所有函数调用和定义
+            renamer = FunctionRenamer(collector.functions)
+            tree = renamer.visit(tree)
+        
         return tree
 
     def plus_zero(self, tree):
@@ -386,57 +422,21 @@ class CodeObfuscator:
         # 以下是新增的7个扰动方法实现
 
     def change_statement_order(self, tree):
-        """更改不共享任何变量的两个相邻语句的顺序"""
-        class StatementReorder(ast.NodeTransformer):
+        """安全版本：不进行语句顺序交换，避免破坏变量依赖关系"""
+        class SafeStatementReorder(ast.NodeTransformer):
             def visit_FunctionDef(self, node):
-                if len(node.body) < 2:
-                    return node
-                    
-                new_body = []
-                i = 0
-                while i < len(node.body):
-                    if i + 1 < len(node.body):
-                        stmt1 = node.body[i]
-                        stmt2 = node.body[i + 1]
-                        
-                        # 简单检查：如果两个语句都是赋值或表达式，且随机概率，则交换
-                        if (isinstance(stmt1, (ast.Assign, ast.Expr, ast.AugAssign)) and 
-                            isinstance(stmt2, (ast.Assign, ast.Expr, ast.AugAssign)) and 
-                            random.random() < 0.4):
-                            new_body.append(stmt2)
-                            new_body.append(stmt1)
-                            i += 2
-                            continue
-                    
-                    new_body.append(node.body[i])
-                    i += 1
-                
-                node.body = new_body
+                # 不进行任何语句顺序修改，直接返回原始节点
                 return node
-        return StatementReorder().visit(tree)
+        
+        return SafeStatementReorder().visit(tree)
 
     def move_assignments(self, tree):
-        """通过移动变量赋值的位置来改变代码的执行顺序和结构"""
-        class AssignmentMover(ast.NodeTransformer):
+        """修改为安全版本：完全不移动任何赋值语句，避免变量未定义错误"""
+        class SafeAssignmentMover(ast.NodeTransformer):
             def visit_FunctionDef(self, node):
-                # 收集所有赋值语句和其他语句
-                assignments = []
-                other_stmts = []
-                
-                for stmt in node.body:
-                    if isinstance(stmt, ast.Assign):
-                        assignments.append(stmt)
-                    else:
-                        other_stmts.append(stmt)
-                
-                # 随机重新排列赋值语句
-                if len(assignments) > 1 and random.random() < 0.6:
-                    random.shuffle(assignments)
-                
-                # 重新组合，将赋值语句放在前面
-                node.body = assignments + other_stmts
+                # 保持所有语句的原始顺序，不进行任何移动，以避免变量未定义错误
                 return node
-        return AssignmentMover().visit(tree)
+        return SafeAssignmentMover().visit(tree)
 
     def div_if_else(self, tree):
         """将If Else-If Else分为If Else If Else"""
@@ -545,16 +545,57 @@ class CodeObfuscator:
                 self.obfuscator = obfuscator
                 self.extracted_functions = []
             
+            def collect_variable_names(self, node):
+                """收集表达式中使用的变量名"""
+                variables = set()
+                
+                class NameCollector(ast.NodeVisitor):
+                    def __init__(self, var_set):
+                        self.var_set = var_set
+                    
+                    def visit_Name(self, node):
+                        # 收集加载上下文的变量名（使用的变量）
+                        if isinstance(node.ctx, ast.Load):
+                            # 排除内置函数和特殊变量
+                            if node.id not in ['__name__', '__main__']:
+                                self.var_set.add(node.id)
+                        self.generic_visit(node)
+                
+                collector = NameCollector(variables)
+                collector.visit(node)
+                return variables
+            
             def visit_If(self, node):
+                # 检查是否是特殊的 __name__ == '__main__' 条件判断
+                if (isinstance(node.test, ast.Compare) and 
+                    isinstance(node.test.left, ast.Name) and 
+                    node.test.left.id == '__name__' and 
+                    len(node.test.ops) == 1 and 
+                    isinstance(node.test.ops[0], ast.Eq) and 
+                    len(node.test.comparators) == 1 and 
+                    isinstance(node.test.comparators[0], ast.Constant) and 
+                    node.test.comparators[0].value == '__main__'):
+                    # 不处理特殊的 __name__ == '__main__' 条件判断
+                    return node
+                
                 if random.random() < 0.3:
+                    # 收集条件中使用的变量名
+                    used_variables = self.collect_variable_names(node.test)
+                    
                     # 提取条件为函数
                     condition_func_name = f"check_condition_{random.randint(100, 999)}"
+                    
+                    # 创建参数列表
+                    args = []
+                    for var_name in used_variables:
+                        arg = ast.arg(arg=var_name)
+                        args.append(arg)
                     
                     # 创建条件函数
                     condition_func = ast.FunctionDef(
                         name=condition_func_name,
                         args=ast.arguments(
-                            args=[],
+                            args=args,
                             posonlyargs=[],
                             kwonlyargs=[],
                             kw_defaults=[],
@@ -563,13 +604,15 @@ class CodeObfuscator:
                         body=[ast.Return(value=node.test)],
                         decorator_list=[]
                     )
-                    # 设置lineno属性
-                    condition_func.lineno = node.lineno
+                    # 确保设置lineno属性，即使原始节点没有这个属性
+                    condition_func.lineno = getattr(node, 'lineno', 0)
+                    condition_func.col_offset = getattr(node, 'col_offset', 0)
                     
-                    # 修改原if语句
+                    # 修改原if语句，传递所有使用的变量作为参数
+                    args_to_pass = [ast.Name(id=var_name, ctx=ast.Load()) for var_name in used_variables]
                     node.test = ast.Call(
                         func=ast.Name(id=condition_func_name, ctx=ast.Load()),
-                        args=[],
+                        args=args_to_pass,
                         keywords=[]
                     )
                     
@@ -579,8 +622,34 @@ class CodeObfuscator:
             def visit_Module(self, node):
                 self.extracted_functions = []
                 self.generic_visit(node)
-                # 添加提取的函数到模块体
-                node.body.extend(self.extracted_functions)
+                
+                # 找到if __name__ == '__main__':语句的位置
+                main_block_index = -1
+                for i, stmt in enumerate(node.body):
+                    if (isinstance(stmt, ast.If) and 
+                        isinstance(stmt.test, ast.Compare) and 
+                        isinstance(stmt.test.left, ast.Name) and 
+                        stmt.test.left.id == '__name__' and 
+                        len(stmt.test.ops) == 1 and 
+                        isinstance(stmt.test.ops[0], ast.Eq) and 
+                        len(stmt.test.comparators) == 1 and 
+                        isinstance(stmt.test.comparators[0], ast.Constant) and 
+                        stmt.test.comparators[0].value == '__main__'):
+                        main_block_index = i
+                        break
+                
+                # 将提取的函数添加到if __name__ == '__main__':语句之前，如果存在的话
+                if main_block_index != -1:
+                    # 先保存main块
+                    main_block = node.body.pop(main_block_index)
+                    # 添加提取的函数
+                    node.body.extend(self.extracted_functions)
+                    # 再添加回main块
+                    node.body.append(main_block)
+                else:
+                    # 如果没有main块，直接添加到末尾
+                    node.body.extend(self.extracted_functions)
+                
                 return node
         
         return IfExtractor(self).visit(tree)
@@ -592,16 +661,43 @@ class CodeObfuscator:
                 self.obfuscator = obfuscator
                 self.extracted_functions = []
             
+            def collect_variable_names(self, node):
+                """收集表达式中使用的变量名"""
+                variables = set()
+                
+                class NameCollector(ast.NodeVisitor):
+                    def __init__(self, var_set):
+                        self.var_set = var_set
+                    
+                    def visit_Name(self, node):
+                        # 收集加载上下文的变量名（使用的变量）
+                        if isinstance(node.ctx, ast.Load):
+                            self.var_set.add(node.id)
+                        self.generic_visit(node)
+                
+                collector = NameCollector(variables)
+                collector.visit(node)
+                return variables
+            
             def visit_BinOp(self, node):
                 if random.random() < 0.2:
+                    # 收集表达式中使用的变量名
+                    used_variables = self.collect_variable_names(node)
+                    
                     # 提取算术表达式为函数
                     func_name = f"calc_{random.randint(100, 999)}"
+                    
+                    # 创建参数列表
+                    args = []
+                    for var_name in used_variables:
+                        arg = ast.arg(arg=var_name)
+                        args.append(arg)
                     
                     # 创建计算函数
                     calc_func = ast.FunctionDef(
                         name=func_name,
                         args=ast.arguments(
-                            args=[],
+                            args=args,
                             posonlyargs=[],
                             kwonlyargs=[],
                             kw_defaults=[],
@@ -610,14 +706,15 @@ class CodeObfuscator:
                         body=[ast.Return(value=node)],
                         decorator_list=[]
                     )
-                    # 设置lineno和col_offset属性
-                    calc_func.lineno = node.lineno
-                    calc_func.col_offset = node.col_offset
+                    # 确保设置lineno和col_offset属性，即使原始节点没有这些属性
+                    calc_func.lineno = getattr(node, 'lineno', 0)
+                    calc_func.col_offset = getattr(node, 'col_offset', 0)
                     
-                    # 替换原表达式
+                    # 替换原表达式，传递所有使用的变量作为参数
+                    args_to_pass = [ast.Name(id=var_name, ctx=ast.Load()) for var_name in used_variables]
                     new_node = ast.Call(
                         func=ast.Name(id=func_name, ctx=ast.Load()),
-                        args=[],
+                        args=args_to_pass,
                         keywords=[]
                     )
                     
@@ -628,7 +725,34 @@ class CodeObfuscator:
             def visit_Module(self, node):
                 self.extracted_functions = []
                 self.generic_visit(node)
-                node.body.extend(self.extracted_functions)
+                
+                # 找到if __name__ == '__main__':语句的位置
+                main_block_index = -1
+                for i, stmt in enumerate(node.body):
+                    if (isinstance(stmt, ast.If) and 
+                        isinstance(stmt.test, ast.Compare) and 
+                        isinstance(stmt.test.left, ast.Name) and 
+                        stmt.test.left.id == '__name__' and 
+                        len(stmt.test.ops) == 1 and 
+                        isinstance(stmt.test.ops[0], ast.Eq) and 
+                        len(stmt.test.comparators) == 1 and 
+                        isinstance(stmt.test.comparators[0], ast.Constant) and 
+                        stmt.test.comparators[0].value == '__main__'):
+                        main_block_index = i
+                        break
+                
+                # 将提取的函数添加到if __name__ == '__main__':语句之前，如果存在的话
+                if main_block_index != -1:
+                    # 先保存main块
+                    main_block = node.body.pop(main_block_index)
+                    # 添加提取的函数
+                    node.body.extend(self.extracted_functions)
+                    # 再添加回main块
+                    node.body.append(main_block)
+                else:
+                    # 如果没有main块，直接添加到末尾
+                    node.body.extend(self.extracted_functions)
+                
                 return node
         
         return ArithmeticExtractor(self).visit(tree)
@@ -646,7 +770,7 @@ def validate_code(code):
 
 def main():
     print("=== Python 代码混淆器 ===")
-    print("基于18种重构方法进行代码混淆")
+    print("基于25种重构方法进行代码混淆")
     
     # 获取输入文件路径
     input_path = input("请输入要混淆的Python文件路径: ").strip()
@@ -670,17 +794,7 @@ def main():
         print("警告: 原始代码存在语法错误!")
         return
     
-    obfuscator = CodeObfuscator()
-    obfuscated_code = obfuscator.obfuscate(source_code)
-    
-    # 验证混淆后的代码
-    if not validate_code(obfuscated_code):
-        print("警告: 混淆后的代码存在语法错误!")
-        return
-    
-    print(f"\n使用的混淆方法编号: {sorted(obfuscator.used_methods)}")
-    
-    # 获取输出文件路径
+    # 获取输出目录
     output_dir = input("请输入输出目录路径 (留空则默认为当前目录下的output): ").strip()
     if not output_dir:
         output_dir = "./output/"
@@ -694,33 +808,42 @@ def main():
     
     # 生成输出文件名
     base_name = os.path.splitext(os.path.basename(input_path))[0]
-    output_filename = f"{base_name}_obfuscated.py"
-    output_path = os.path.join(output_dir, output_filename)
     
-    # 写入混淆后的代码
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(obfuscated_code)
-        print(f"\n混淆后的代码已保存到: {output_path}")
-        print(f"文件大小: {len(obfuscated_code)} 字符")
+    # 生成3个混淆版本
+    for i in range(1, 4):
+        print(f"\n生成混淆版本 {i}/3...")
+        obfuscator = CodeObfuscator()
+        obfuscated_code = obfuscator.obfuscate(source_code)
         
-        # 验证保存的代码
-        with open(output_path, 'r', encoding='utf-8') as f:
-            saved_code = f.read()
-        if validate_code(saved_code):
-            print("✓ 保存的代码语法正确")
-        else:
-            print("✗ 保存的代码存在语法错误")
+        # 验证混淆后的代码
+        if not validate_code(obfuscated_code):
+            print(f"警告: 混淆版本 {i} 存在语法错误，跳过保存")
+            continue
+        
+        print(f"使用的混淆方法编号: {sorted(obfuscator.used_methods)}")
+        
+        output_filename = f"{base_name}_obfuscated_v{i}.py"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(obfuscated_code)
+            print(f"混淆后的代码已保存到: {output_path}")
+            print(f"文件大小: {len(obfuscated_code)} 字符")
             
-    except Exception as e:
-        print(f"错误: 无法写入文件 '{output_path}' - {e}")
-        return
+            # 验证保存的代码
+            with open(output_path, 'r', encoding='utf-8') as f:
+                saved_code = f.read()
+            if validate_code(saved_code):
+                print("✓ 保存的代码语法正确")
+            else:
+                print("✗ 保存的代码存在语法错误")
+                
+        except Exception as e:
+            print(f"错误: 无法写入文件 '{output_path}' - {e}")
+            continue
     
-    # 询问是否显示混淆后的代码
-    show_code = input("是否显示混淆后的代码? (y/n): ").strip().lower()
-    if show_code == 'y':
-        print("\n混淆后的代码:")
-        print(obfuscated_code)
+    print("\n批量混淆完成!")
 
 
 if __name__ == "__main__":
