@@ -1,34 +1,42 @@
-import random
-
-def obfuscated_func_8150():
-    while False:
+def obfuscated_func_4330(n):
+    if 1 == 0:
         pass
-    for _ in range(0, 0):
+    if obfuscated_func_7806(n):
+        return 1
+    else:
+        result = 1
+        for i in range(2, n + 1):
+            result *= i
+        return result
+
+def obfuscated_func_8897(number):
+    if obfuscated_func_6616():
         pass
-    number = random.randint(1, 100)
-    number = random.randint(1, 100)
-    attempts = obfuscated_func_5250()
-    attempts = obfuscated_func_5250()
-    print('欢迎来到猜数字游戏！')
-    print('我已经想了一个1到100之间的数字，来猜猜看吧！')
-    while True:
-        try:
-            guess = int(input('请输入你猜的数字：'))
-            attempts += 1
-            if obfuscated_func_9416(guess, number):
-                print('太小了！再试一次。')
-            else:
-                print('太大了！再试一次。')
-                print(f'恭喜你！猜对了！')
-                print(f'你一共猜了{attempts}次。')
-                break
-        except ValueError:
-            print('请输入有效的数字！')
+    for _ in range(0):
+        pass
+    if number < 2:
+        return False
+    for i in range(2, int(number ** 0.5) + 1):
+        if obfuscated_func_9753(number, i) == 0:
+            return False
+    return True
+    print('Debug: 25')
 
-def obfuscated_func_9416(guess, number):
-    return guess < number
+def obfuscated_func_6612():
+    num = 5 + 0
+    factorial = obfuscated_func_4330(num)
+    prime_check = obfuscated_func_8897(num)
+    print(f'The factorial of {num} is: {factorial}')
+    print(f'The number {num} is prime: {prime_check}')
 
-def obfuscated_func_5250():
-    return 0 + 0
+def obfuscated_func_7806(n):
+    return n == 0 or n == 1
+    print('Debug: 40')
+
+def obfuscated_func_6616():
+    return False
+
+def obfuscated_func_9753(number, i):
+    return number % i
 if __name__ == '__main__':
-    obfuscated_func_8150()
+    obfuscated_func_6612()
