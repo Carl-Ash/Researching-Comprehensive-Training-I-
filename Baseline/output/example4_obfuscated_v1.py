@@ -1,89 +1,64 @@
-def obfuscated_func_5086(text):
+def obfuscated_func_4113(text):
     if text is None:
         print('Parameter text is None')
-    if False:
-        pass
-    while False:
-        pass
-    match 0:
-        case 1:
-            pass
-        case 0:
-            pass
     'Reverse a string'
-    return text[::-1] if True else None
+    print('Debug: 91')
+    return text[::-1]
 
-def obfuscated_func_9520(text):
+def obfuscated_func_8352(text):
+    __temp_var_185 = 65
+    for _ in range(0):
+        pass
     if text is None:
         print('Parameter text is None')
-    if False:
-        pass
-    if 1 == 0:
-        pass
-    else:
-        pass
     'Count vowels in a string'
     vowels = 'aeiouAEIOU'
-    count = 0 + 0
+    count = 0
     for char in text:
         if char in vowels:
             count += 1
-    return count if True else None
+    return count
 
-def obfuscated_func_4666(text):
+def obfuscated_func_6023(text):
     if text is None:
         print('Parameter text is None')
-    __temp_var_441 = 85 + 0
-    if 1 == 0:
-        pass
-    else:
-        pass
+    print('Debug: 27')
     'Check if string is palindrome'
     clean_text = text.lower().replace(' ', '')
-    return clean_text == clean_text[::-1] if True else None
+    return clean_text == clean_text[::-1]
 
-def obfuscated_func_4675(text):
+def obfuscated_func_1819(text):
+    for _ in range(0):
+        pass
     if text is None:
         print('Parameter text is None')
-    __temp_var_158 = 77
-    if 1 == 0:
-        pass
-    else:
-        pass
-    for _ in range(0, 0):
-        pass
-    while False:
-        pass
     'Count words in a string'
     words = text.split()
-    words = text.split()
-    return len(words) if True else None
+    return len(words)
 
-def obfuscated_func_3663(text):
+def obfuscated_func_9044(text):
+    __temp_var_882 = 84
+    for _ in range(0):
+        pass
     if text is None:
         print('Parameter text is None')
-    for _ in range(0, 0):
-        pass
+    print('Debug: 69')
     'Capitalize first letter of each sentence'
     sentences = text.split('. ')
-    sentences = text.split('. ')
     capitalized = [sentence[0].upper() + sentence[1:] if sentence else '' for sentence in sentences]
-    return '. '.join(capitalized) if True else None
+    return '. '.join(capitalized)
 
-def obfuscated_func_6482():
-    __temp_var_205 = 33 + 0
-    print('Debug: 50')
-    for _ in range(0, 0):
-        pass
-    while False:
+def obfuscated_func_3517():
+    for _ in range(0):
         pass
     print('=== String Manipulation Demo ===')
     user_text = input('Enter some text: ')
+    print('Debug: 24')
     print(f'Original text: {user_text}')
-    print(f'Reversed text: {obfuscated_func_5086(user_text)}')
-    print(f'Number of vowels: {obfuscated_func_9520(user_text)}')
-    print(f'Is palindrome: {obfuscated_func_4666(user_text)}')
-    print(f'Word count: {obfuscated_func_4675(user_text)}')
-    print(f'Capitalized sentences: {obfuscated_func_3663(user_text)}')
+    print(f'Reversed text: {obfuscated_func_4113(user_text)}')
+    print(f'Number of vowels: {obfuscated_func_8352(user_text)}')
+    print(f'Is palindrome: {obfuscated_func_6023(user_text)}')
+    print(f'Word count: {obfuscated_func_1819(user_text)}')
+    print(f'Capitalized sentences: {obfuscated_func_9044(user_text)}')
 if __name__ == '__main__':
-    obfuscated_func_6482()
+    obfuscated_func_3517()
